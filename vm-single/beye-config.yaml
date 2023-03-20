@@ -1,0 +1,65 @@
+#cloud-config
+packages:
+  - openssh-server
+  - epel-release
+  - wget 
+  - net-tools
+
+runcmd:
+  - yum install -y tar wget
+  - wget -q https://dl.grafana.com/oss/release/grafana-9.3.6-1.x86_64.rpm
+  - yum install -y grafana-9.3.6-1.x86_64.rpm
+  - systemctl enable grafana-server
+  - systemctl start grafana-server
+  - wget -O /tmp/victoria-metrics-linux-amd64-v1.89.1.tar.gz https://github.com/VictoriaMetrics/VictoriaMetrics/releases/download/v1.89.1/victoria-metrics-linux-amd64-v1.89.1.tar.gz
+  - tar -C /usr/local/bin/ -xvzf /tmp/victoria-metrics-linux-amd64-v1.89.1.tar.gz
+  - rm -f /tmp/victoria-metrics-linux-amd64-v1.89.1.tar.gz
+  - mkdir -p /data/vmstorage-data
+  - systemctl enable victoria-metrics.service
+  - systemctl restart victoria-metrics.service
+
+write_files:
+  - path: /etc/systemd/system/victoria-metrics.service
+    permissions: "0644"
+    owner: root
+    content: |
+      [Unit]
+      Description=VictoriaMetrics
+      After=network.target
+ 
+      [Service]
+      Restart=on-failure
+      WorkingDirectory=/tmp
+      ExecStart=/usr/local/bin/victoria-metrics-prod -loggerTimezone Asia/Tokyo -storageDataPath /data/vmstorage-data -opentsdbListenAddr=:4242 -storageDataPath=/var/tmp/victoriametrics -retentionPeriod=5y -search.maxSeries 1000000 -search.maxUniqueTimeseries=1000000000 -search.maxQueryDuration=30m -search.maxSamplesPerQuery=100000000000 -search.latencyOffset=1s
+ 
+      [Install]
+      WantedBy=multi-user.target
+
+  - path: /etc/grafana/provisioning/datasources/datasource.yaml
+    permissions: "0644"
+    owner: root
+    content: |
+      apiVersion: 1
+
+      datasources:
+      - name: Prometheus
+        type: prometheus
+        url: http://localhost:8428
+        isDefault: true
+
+  - path: /etc/grafana/provisioning/dashboards/dashboard.yaml 
+    permissions: "0644"
+    owner: root
+    content: |
+      apiVersion: 1
+
+      providers:
+      - name: 'EXAScaler'
+        folder: 'Server'
+        type: file
+        disableDeletion: true
+        updateIntervalSeconds: 60
+        allowUiUpdates: true
+        options:
+          path: /var/lib/grafana/dashboards/dashboard.json
+          foldersFromFilesStructure: true

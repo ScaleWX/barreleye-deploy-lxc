@@ -1,0 +1,93 @@
+#cloud-config
+packages:
+  - openssh-server
+  - epel-release
+  - wget 
+  - net-tools
+
+runcmd:
+  - yum install -y tar wget
+  - wget -q https://dl.grafana.com/oss/release/grafana-9.3.6-1.x86_64.rpm
+  - yum install -y grafana-9.3.6-1.x86_64.rpm
+  - systemctl enable grafana-server
+  - systemctl start grafana-server
+  - yum install -y nginx
+  - sed -i -e 's/*.conf/*_http.conf/' /etc/nginx/nginx.conf
+  - printf "stream {\n    include /etc/nginx/conf.d/*_stream.conf;\n}\n" >> /etc/nginx/nginx.conf
+  - systemctl enable nginx
+  - systemctl restart nginx
+
+write_files:
+  - path: /etc/grafana/provisioning/datasources/datasource.yaml
+    permissions: "0644"
+    owner: root
+    content: |
+      apiVersion: 1
+
+      datasources:
+      - name: Prometheus
+        type: prometheus
+        url: http://10.128.15.103:8481/select/0/prometheus
+        isDefault: true
+
+  - path: /etc/grafana/provisioning/dashboards/dashboard.yaml 
+    permissions: "0644"
+    owner: root
+    content: |
+      apiVersion: 1
+
+      providers:
+      - name: 'EXAScaler'
+        folder: 'Server'
+        type: file
+        disableDeletion: true
+        updateIntervalSeconds: 60
+        allowUiUpdates: true
+        options:
+          path: /var/lib/grafana/dashboards/dashboard.json
+          foldersFromFilesStructure: true
+
+  - path: /etc/yum.repos.d/nginx.repo
+    permissions: "0644"
+    owner: root
+    content: |
+      [nginx-stable]
+      name=nginx stable repo
+      baseurl=http://nginx.org/packages/centos/$releasever/$basearch/
+      gpgcheck=1
+      enabled=1
+      gpgkey=https://nginx.org/keys/nginx_signing.key
+      module_hotfixes=true
+
+  - path: /etc/nginx/conf.d/vm_stream.conf
+    permissions: "0644"
+    owner: root
+    content: |
+      proxy_protocol off;
+      upstream tsdb {
+              server 10.128.15.100:4242;
+              server 10.128.15.101:4242;
+              server 10.128.15.102:4242;
+      }
+
+      server {
+              listen 10.128.15.103:4242;
+              proxy_pass tsdb;
+      }
+
+  - path: /etc/nginx/conf.d/vm_http.conf
+    permissions: "0644"
+    owner: root
+    content: |
+      upstream vmselect {
+              server 10.128.15.100:8481;
+              server 10.128.15.101:8481;
+              server 10.128.15.102:8481;
+      }
+
+      server {
+              listen 10.128.15.103:8481;
+              location / {
+                      proxy_pass http://vmselect;
+              }
+      }
