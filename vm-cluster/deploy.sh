@@ -1,6 +1,7 @@
 #!/bin/sh
 
 NODEFILE=nodes
+IMAGE=almalinux/8/cloud
 
 NET_TEMPLATE=beye-network-tmpl.yaml
 CONFIG_VM=beye-config-vm-cluster.yaml
@@ -11,7 +12,7 @@ for node in $(awk '{if($3 == "vm")print $1}' $NODEFILE); do
 	lxc stop -f $node
 	lxc delete $node
 
-	lxc init images:almalinux/8/cloud $node
+	lxc init images:$IMAGE $node
 	IP=$(grep ^$node $NODEFILE | awk '{print $2}');sed -e "s/@@IP@@/$IP/" $NET_TEMPLATE | lxc config set $node cloud-init.network-config -
 	lxc config set $node cloud-init.user-data - < ${CONFIG_VM}
 	lxc start $node
@@ -21,7 +22,7 @@ done
 LBNODE=$(awk '{if($3 == "lb")print $1}' $NODEFILE)
 lxc stop -f ${LBNODE}
 lxc delete ${LBNODE}
-lxc init images:almalinux/8/cloud ${LBNODE}
+lxc init images:$IMAGE ${LBNODE}
 IP=$(grep ^$LBNODE $NODEFILE | awk '{print $2}');sed -e "s/@@IP@@/$IP/" $NET_TEMPLATE | lxc config set $LBNODE cloud-init.network-config -
 lxc config set ${LBNODE} cloud-init.user-data - < ${CONFIG_LB}
 lxc file push -p grafana_tmpl/dashboard.json ${LBNODE}/var/lib/grafana/dashboards/
